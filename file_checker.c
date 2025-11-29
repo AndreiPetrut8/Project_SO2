@@ -62,41 +62,39 @@ int main() {
 
    
     //end comm
-   
-
-    load_directory(current_path);
-
-    while (1) {
-        clear();
-        mvprintw(0, 0, "Exploring: %s", current_path);
-	while((int n = read(socket_fd,current_path, sizeof(current_path)-1)) > 0)
-      {
-	current_path[n] = '\0';
+    int count = 0;
+    
+    clear();
+        
+    mvprintw(0, 0, "Your files on the server:");
+    
+    while (1) {  
+      int n;
+      if((n = read(socket_fd,current_path, sizeof(current_path)-1)) > 0){
+	break;
       }
+      current_path[n] = '\0';
+
+      mvprintw(count + 2, 2, "%s", current_path);
+      count++;
+    }
+
+    refresh();
 
     close(socket_fd);
 
-        for (int i = 0; i < item_count; i++) {
-            if (i == selected)
-                attron(A_REVERSE);
 
-            if (is_directory(current_path, items[i]))
-                mvprintw(i + 2, 2, "[%s]", items[i]);
-            else
-                mvprintw(i + 2, 2, "%s", items[i]);
 
-            if (i == selected)
-                attroff(A_REVERSE);
-        }
+    
+    while(1){
+      int ch = getch();
 
-        refresh();
-
-        int ch = getch();
-
-        if (ch == 'q') {
-            break;
-        }
+      if (ch == 'q') {
+	break;
+      }
     }
+
+   
 
     endwin();
     return 0;
