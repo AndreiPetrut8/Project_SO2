@@ -3,4 +3,5 @@ ncurses:
 
 all:
 	gcc client.c -lncurses -o bin
+	gcc file_loading.c -lncurses -o bin1
 	./bin
