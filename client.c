@@ -1,5 +1,8 @@
 #include <ncurses.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <stdlib.h>
 
 typedef struct {
   WINDOW *win;
@@ -35,9 +38,8 @@ int main() {
 
   Button b1, b2, b3;
 
-  // Setarea butoanelor
-  b1 = (Button){ newwin(bh, bw, y, w/6 - bw/2), w/6 - bw/2, y, bw, bh, "Buton 1" };
-  b2 = (Button){ newwin(bh, bw, y, w/2 - bw/2), w/2 - bw/2, y, bw, bh, "Buton 2" };
+  b1 = (Button){ newwin(bh, bw, y, w/6 - bw/2), w/6 - bw/2, y, bw, bh, "Upload files" };
+  b2 = (Button){ newwin(bh, bw, y, w/2 - bw/2), w/2 - bw/2, y, bw, bh, "Check files" };
   b3 = (Button){ newwin(bh, bw, y, 5*w/6 - bw/2), 5*w/6 - bw/2, y, bw, bh, "Buton 3" };
   refresh();
 
@@ -62,16 +64,58 @@ int main() {
 	  if (click_inside(&b1, mx, my)) {
 	    draw_button(&b1, 1);
 	    refresh();
-	    mvprintw(0, 0, "Ai dat click pe Buton 1   ");
 	    napms(100);
 	    draw_button(&b1, 0);
+	    pid_t copil = fork();
+	    if (copil == 0) {   
+	      execl("./bin1", "./bin1", NULL);
+
+	      perror("execlp a esuat");
+	      exit(1);
+	    } else {
+	      wait(NULL);
+
+	      endwin();
+	      refresh();
+	      initscr();
+	      noecho();
+	      curs_set(FALSE);
+	      keypad(stdscr, TRUE);
+	      mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
+
+	      draw_button(&b1, 0);
+	      draw_button(&b2, 0);
+	      draw_button(&b3, 0);
+	      refresh();
+	    }
 	  } 
 	  else if (click_inside(&b2, mx, my)) {
 	    draw_button(&b2, 1);
 	    refresh();
-	    mvprintw(0, 0, "Ai dat click pe Buton 2   ");
 	    napms(100);
 	    draw_button(&b2, 0);
+	     pid_t copil = fork();
+	    if (copil == 0) {   
+	      execl("./bin2", "./bin2", NULL);
+
+	      perror("execlp a esuat");
+	      exit(1);
+	    } else {
+	      wait(NULL);
+
+	      endwin();
+	      refresh();
+	      initscr();
+	      noecho();
+	      curs_set(FALSE);
+	      keypad(stdscr, TRUE);
+	      mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
+
+	      draw_button(&b1, 0);
+	      draw_button(&b2, 0);
+	      draw_button(&b3, 0);
+	      refresh();
+	    }
 	  } 
 	  else if (click_inside(&b3, mx, my)) {
 	    draw_button(&b3, 1);
