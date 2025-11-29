@@ -8,36 +8,11 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define MAX_ITEMS 2048
 #define PORT 8081
 
 char current_path[1024];
-char *items[MAX_ITEMS];
-int item_count = 0;
-int selected = 0;
-
-void load_directory(const char *path) {
-    DIR *dir;
-    struct dirent *entry;
-
-    for (int i = 0; i < item_count; i++)
-        free(items[i]);
-    item_count = 0;
-    selected = 0;
-
-    dir = opendir(path);
-    if (!dir) return;
-
-    while ((entry = readdir(dir)) != NULL) {
-        items[item_count++] = strdup(entry->d_name);
-        if (item_count >= MAX_ITEMS) break;
-    }
-
-    closedir(dir);
-}
 
 int main() {
-    strcpy(current_path, "/");
 
     initscr();
     noecho();
@@ -63,28 +38,37 @@ int main() {
    
     //end comm
     int count = 0;
-    
-    clear();
-        
-    mvprintw(0, 0, "Your files on the server:");
-    
-    while (1) {  
-      int n;
-      if((n = read(socket_fd,current_path, sizeof(current_path)-1)) > 0){
-	break;
-      }
-      current_path[n] = '\0';
 
-      mvprintw(count + 2, 2, "%s", current_path);
-      count++;
+    clear();
+    mvprintw(0, 0, "Your files on the server:");
+
+    int idx = 0;
+
+    while (1) {
+      char c;
+      int n = read(socket_fd, &c, 1);
+
+      if (n <= 0)
+	break;
+
+      if (c == '\n') {
+	current_path[idx] = '\0';
+	idx = 0;
+
+	if (strcmp(current_path, "END") == 0) {
+	  break;
+	}
+
+	mvprintw(count + 2, 2, "%s", current_path);
+	count++;
+
+      } else {
+	current_path[idx++] = c;
+      }
     }
 
     refresh();
-
     close(socket_fd);
-
-
-
     
     while(1){
       int ch = getch();
