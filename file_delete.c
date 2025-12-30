@@ -6,43 +6,30 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define PORT 8081
 #define MAX_FILES 1024
-#define MAX_PATH 1024
 
-char files[MAX_FILES][MAX_PATH];
+char *files[MAX_FILES];
 int file_count = 0;
+int global_sockfd;
 
-int main(void) {
+int main(int argc, char **argv) {
+    if (argc < 2) {
+        return 1; 
+    }
+
+    global_sockfd = atoi(argv[1]);
+
     initscr();
     noecho();
     curs_set(FALSE);
     keypad(stdscr, TRUE);
 
-    int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (socket_fd < 0) {
-        endwin();
-        perror("socket");
-        exit(1);
-    }
-
-    struct sockaddr_in address = {0};
-    address.sin_family = AF_INET;
-    address.sin_port = htons(PORT);
-    inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
-
-    if (connect(socket_fd, (struct sockaddr*)&address, sizeof(address)) < 0) {
-        endwin();
-        perror("connect");
-        exit(1);
-    }
-
-    char buffer[MAX_PATH];
+    char buffer[1024];
     int idx = 0;
 
-    while (1) {
+    while (file_count < MAX_FILES) {
         char c;
-        int n = read(socket_fd, &c, 1);
+        int n = read(global_sockfd, &c, 1);
         if (n <= 0) break;
 
         if (c == '\n') {
@@ -52,35 +39,23 @@ int main(void) {
             if (strcmp(buffer, "END") == 0)
                 break;
 
-            strncpy(files[file_count++], buffer, MAX_PATH);
+            files[file_count++] = strdup(buffer);
         } else {
-            if (idx < MAX_PATH - 1)
-                buffer[idx++] = c;
+	  buffer[idx++] = c;
         }
     }
 
     int selected = 0;
-    int offset = 0;
-    int max_y, max_x;
 
     while (1) {
-        getmaxyx(stdscr, max_y, max_x);
         clear();
 
-        mvprintw(0, 0, "Server files (ENTER = delete, q = quit)");
+        mvprintw(0, 0, "DELETE MODE: Select file and press ENTER ('q' to cancel)");
 
-        int visible = max_y - 2;
-
-        for (int i = 0; i < visible && i + offset < file_count; i++) {
-            int idx = i + offset;
-
-            if (idx == selected)
-                attron(A_REVERSE);
-
-            mvprintw(i + 1, 2, "%s", files[idx]);
-
-            if (idx == selected)
-                attroff(A_REVERSE);
+        for (int i = 0; i < file_count; i++) {
+            if (i == selected)attron(A_REVERSE);
+            mvprintw(i + 2, 2, "%s", files[i]);
+            if (i == selected)attroff(A_REVERSE);
         }
 
         refresh();
@@ -89,29 +64,21 @@ int main(void) {
         if (ch == 'q')
             break;
 
-        if (ch == KEY_UP) {
-            if (selected > 0)
-                selected--;
-            if (selected < offset)
-                offset--;
-        }
+        if (ch == KEY_UP && selected > 0) selected--;
 
-        if (ch == KEY_DOWN) {
-            if (selected < file_count - 1)
-                selected++;
-            if (selected >= offset + visible)
-                offset++;
-        }
+        if (ch == KEY_DOWN && selected < file_count - 1)selected++;
 
         if (ch == '\n') {
-            write(socket_fd, files[selected], strlen(files[selected]));
-            write(socket_fd, "\n", 1);
-
+            write(global_sockfd, files[selected], strlen(files[selected]));
+            write(global_sockfd, "\n", 1);
+            refresh();
+            napms(500); 
             break;
         }
     }
 
-    close(socket_fd);
+    for (int i = 0; i < file_count; i++) free(files[i]);
+
     endwin();
     return 0;
 }

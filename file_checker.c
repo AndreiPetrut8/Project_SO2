@@ -8,35 +8,23 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define PORT 8081
+#define MAX_FILES 1024
 
+int socket_fd;
 char current_path[1024];
 
-int main() {
+int main(int argc, char **argv) {
+    if (argc < 2) {
+        printf("Eroare: Lipseste descriptorul de socket.\n");
+        exit(1);
+    }
+    socket_fd = atoi(argv[1]);
 
     initscr();
     noecho();
     curs_set(FALSE);
     keypad(stdscr, TRUE);
-    //comm
-    int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (socket_fd < 0) {
-      perror("socket creation failed");
-      exit(-1);
-    }
-
-    struct sockaddr_in address = {0};
-    address.sin_family = AF_INET;
-    address.sin_port = htons(PORT);
-    inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
-
-    if (connect(socket_fd, (struct sockaddr*)&address, sizeof(address)) < 0) {
-      perror("Connection failed");
-      exit(-1);
-    }
-
    
-    //end comm
     int count = 0;
 
     clear();
@@ -44,7 +32,7 @@ int main() {
 
     int idx = 0;
 
-    while (1) {
+    while (count < MAX_FILES) {
       char c;
       int n = read(socket_fd, &c, 1);
 

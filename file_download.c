@@ -1,123 +1,97 @@
 #include <ncurses.h>
-#include <dirent.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <fcntl.h>
 
-#define MAX_ITEMS 2048
+#define MAX_FILES 1024
+#define BUFFER_SIZE 8192
 
-char current_path[1024];
-char *items[MAX_ITEMS];
-int item_count = 0;
+char *file_list[MAX_FILES];
+int file_count = 0;
 int selected = 0;
+int global_sockfd;
 
-void load_directory(const char *path) {
-    DIR *dir;
-    struct dirent *entry;
+void download_selected_file(const char *filename) {
+    write(global_sockfd, filename, strlen(filename));
+    write(global_sockfd, "\n", 1);
 
-    for (int i = 0; i < item_count; i++)
-        free(items[i]);
-    item_count = 0;
-    selected = 0;
+    int file_size;
+    if (read(global_sockfd, &file_size, sizeof(int)) <= 0) return;
 
-    dir = opendir(path);
-    if (!dir) return;
+    int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if (fd < 0) return;
 
-    while ((entry = readdir(dir)) != NULL) {
-        items[item_count++] = strdup(entry->d_name);
-        if (item_count >= MAX_ITEMS) break;
+    int total_received = 0;
+    char buffer[BUFFER_SIZE];
+    
+    while (total_received < file_size) {
+        int to_read = (file_size - total_received > BUFFER_SIZE) ? BUFFER_SIZE : (file_size - total_received);
+        int n = read(global_sockfd, buffer, to_read);
+        if (n <= 0) break;
+        
+        write(fd, buffer, n);
+        total_received += n;
+
+        mvprintw(LINES - 1, 0, "Downloading: %d/%d bytes", total_received, file_size);
+        refresh();
     }
 
-    closedir(dir);
+    close(fd);
+    mvprintw(LINES - 2, 0, "Fisierul %s a fost salvat local!", filename);
+    refresh();
+    sleep(2);
 }
 
-int is_directory(const char *dir, const char *name) {
-    char fullpath[1024];
-    struct stat st;
+int main(int argc, char **argv) {
+    if (argc < 2) {
+        return 1;
+    }
 
-    snprintf(fullpath, sizeof(fullpath), "%s/%s", dir, name);
-    if (stat(fullpath, &st) == -1) return 0;
-
-    return S_ISDIR(st.st_mode);
-}
-
-int main() {
-    strcpy(current_path, "/");
+    global_sockfd = atoi(argv[1]);
 
     initscr();
     noecho();
     curs_set(FALSE);
     keypad(stdscr, TRUE);
 
-    load_directory(current_path);
+    char temp[1024];
+    int idx = 0;
+    while (file_count < MAX_FILES) {
+        char c;
+        if (read(global_sockfd, &c, 1) <= 0) break;
+        if (c == '\n') {
+            temp[idx] = '\0';
+            if (strcmp(temp, "END") == 0) break;
+            file_list[file_count++] = strdup(temp);
+            idx = 0;
+        } else {
+            temp[idx++] = c;
+        }
+    }
 
     while (1) {
         clear();
-        mvprintw(0, 0, "Exploring: %s", current_path);
-
-        for (int i = 0; i < item_count; i++) {
-            if (i == selected)
-                attron(A_REVERSE);
-
-            if (is_directory(current_path, items[i]))
-                mvprintw(i + 2, 2, "[%s]", items[i]);
-            else
-                mvprintw(i + 2, 2, "%s", items[i]);
-
-            if (i == selected)
-                attroff(A_REVERSE);
+        mvprintw(0, 0, "Server Files (Select with ENTER, 'q' to go back):");
+        for (int i = 0; i < file_count; i++) {
+            if (i == selected) attron(A_REVERSE);
+            mvprintw(i + 2, 2, "%s", file_list[i]);
+            if (i == selected) attroff(A_REVERSE);
         }
-
         refresh();
 
         int ch = getch();
-
-        if (ch == KEY_UP) {
-            if (selected > 0) selected--;
-        }
-        else if (ch == KEY_DOWN) {
-            if (selected < item_count - 1) selected++;
-        }
+        if (ch == KEY_UP && selected > 0) selected--;
+        else if (ch == KEY_DOWN && selected < file_count - 1) selected++;
+        else if (ch == 'q') break;
         else if (ch == 10) {
-          if (is_directory(current_path, items[selected])) {
-            char new_path[1024];
-
-            if (strcmp(current_path, "/") == 0) {
-              strcpy(new_path, "/");
-              strncat(new_path, items[selected], sizeof(new_path) - strlen(new_path) - 1);
-            } else {
-              strcpy(new_path, current_path);
-              strncat(new_path, "/", sizeof(new_path) - strlen(new_path) - 1);
-              strncat(new_path, items[selected], sizeof(new_path) - strlen(new_path) - 1);
-            }
-
-            strcpy(current_path, new_path);
-            load_directory(current_path);
-          }
-        }
-        else if (ch == KEY_BACKSPACE || ch == 127) {
-          if (strcmp(current_path, "/") == 0) {
-            load_directory(current_path);
-            continue;
-          }
-
-          char *last = strrchr(current_path, '/');
-
-          if (last) {
-            if (last == current_path) {
-              strcpy(current_path, "/");
-            } else {
-              *last = '\0';
-            }
-          }
-
-          load_directory(current_path);
-        }
-        else if (ch == 'q') {
+            download_selected_file(file_list[selected]);
             break;
         }
     }
+
+    for (int i = 0; i < file_count; i++) free(file_list[i]);
 
     endwin();
     return 0;

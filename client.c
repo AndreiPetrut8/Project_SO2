@@ -3,12 +3,21 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <stdlib.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+#define SERVER_PORT 4555
+#define SERVER_IP "127.0.0.1"
 
 typedef struct {
   WINDOW *win;
   int x, y, w, h;
   const char *label;
 } Button;
+
+int global_sockfd = -1;
+char username[50];
 
 void draw_button(Button *btn, int highlighted) {
   if (highlighted) wattron(btn->win, A_REVERSE);
@@ -23,6 +32,31 @@ int click_inside(Button *btn, int mx, int my) {
           my >= btn->y && my < btn->y + btn->h);
 }
 
+void connect_and_identify() {
+    struct sockaddr_in server_addr;
+    global_sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (global_sockfd < 0) {
+        endwin();
+        perror("Eroare creare socket");
+        exit(1);
+    }
+
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(SERVER_PORT);
+    server_addr.sin_addr.s_addr = inet_addr(SERVER_IP);
+
+    if (connect(global_sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        endwin();
+        printf("Serverul nu raspunde la %s:%d\n", SERVER_IP, SERVER_PORT);
+        exit(1);
+    }
+
+    int name_len = strlen(username);
+    write(global_sockfd, &name_len, sizeof(int));
+    write(global_sockfd, username, name_len);
+}
+
 int main() {
   initscr();
   noecho();
@@ -33,7 +67,6 @@ int main() {
   int h, w;
   getmaxyx(stdscr, h, w);
 
-  char username[64];
   int len = 0;
   int ch;
 
@@ -77,6 +110,8 @@ int main() {
   clear();
   refresh();
 
+  connect_and_identify();
+
   int bh = 3, bw = 15;
   int y = h - bh - 1;
 
@@ -113,7 +148,9 @@ int main() {
 
           pid_t copil = fork();
           if (copil == 0) {
-            execl("./bin1", "./bin1", NULL);
+            char sock_str[10];
+	    sprintf(sock_str, "%d", global_sockfd);              
+	    execl("./bin1", "./bin1", sock_str, NULL);
             perror("execl failed");
             exit(1);
           } else {
@@ -134,7 +171,9 @@ int main() {
 
           pid_t copil = fork();
           if (copil == 0) {
-            execl("./bin2", "./bin2", NULL);
+            char sock_str[10];
+	    sprintf(sock_str, "%d", global_sockfd);              
+	    execl("./bin2", "./bin2", sock_str, NULL);
             perror("execl failed");
             exit(1);
           } else {
@@ -155,7 +194,9 @@ int main() {
 
           pid_t copil = fork();
           if (copil == 0) {
-            execl("./bin3", "./bin3", NULL);
+            char sock_str[10];
+	    sprintf(sock_str, "%d", global_sockfd);              
+	    execl("./bin3", "./bin3", sock_str, NULL);
             perror("execl failed");
             exit(1);
           } else {
@@ -176,7 +217,9 @@ int main() {
 
           pid_t copil = fork();
           if (copil == 0) {
-            execl("./bin4", "./bin4", NULL);
+            char sock_str[10];
+	    sprintf(sock_str, "%d", global_sockfd);              
+	    execl("./bin4", "./bin4", sock_str, NULL);
             perror("execl failed");
             exit(1);
           } else {
