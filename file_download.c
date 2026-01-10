@@ -23,7 +23,7 @@ void download_selected_file(const char *filename) {
     int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0666);
     if (fd < 0) return;
 
-    int total_received = 0;
+    int total_received = 0;   
     char buffer[BUFFER_SIZE];
     
     while (total_received < file_size) {

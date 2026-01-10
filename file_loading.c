@@ -61,7 +61,11 @@ void send_file(const char *filename) {
     global_fd = open(full_path, O_RDONLY);
     if (global_fd < 0) return;
 
-    write(global_sockfd, &file_size, sizeof(file_size));
+   int fname_len = strlen(filename);
+    write(global_sockfd, &fname_len, sizeof(int));
+    write(global_sockfd, filename, fname_len);
+
+     write(global_sockfd, &file_size, sizeof(file_size));
 
     int chunks = (file_size + CHUNK - 1) / CHUNK;
     pthread_t th[chunks];
@@ -180,5 +184,6 @@ int main(int argc, char **argv) {
     }
 
     endwin();
+    shutdown(global_sockfd, SHUT_WR);//Trimite EOF pe socket
     return 0;
 }

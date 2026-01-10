@@ -9,6 +9,10 @@
 
 #define SERVER_PORT 4555
 #define SERVER_IP "127.0.0.1"
+#define OP_UPLOAD 1
+#define OP_CHECK 2
+#define OP_DOWNLOAD 3
+#define OP_DELETE 4
 
 typedef struct {
   WINDOW *win;
@@ -32,7 +36,7 @@ int click_inside(Button *btn, int mx, int my) {
           my >= btn->y && my < btn->y + btn->h);
 }
 
-void connect_and_identify() {
+void connect_and_identify(int op) {
     struct sockaddr_in server_addr;
     global_sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (global_sockfd < 0) {
@@ -55,6 +59,7 @@ void connect_and_identify() {
     int name_len = strlen(username);
     write(global_sockfd, &name_len, sizeof(int));
     write(global_sockfd, username, name_len);
+    write(global_sockfd,&op,sizeof(int));
 }
 
 int main() {
@@ -110,7 +115,7 @@ int main() {
   clear();
   refresh();
 
-  connect_and_identify();
+  //connect_and_identify();
 
   int bh = 3, bw = 15;
   int y = h - bh - 1;
@@ -140,7 +145,8 @@ int main() {
       int my = mevent.y;
 
       if (mevent.bstate & BUTTON1_CLICKED) {
-
+        int op=OP_UPLOAD;
+        connect_and_identify(op);
         if (click_inside(&b1, mx, my)) {
           draw_button(&b1, 1);
           napms(100);
@@ -165,6 +171,8 @@ int main() {
         }
 
         else if (click_inside(&b2, mx, my)) {
+          int op=OP_CHECK;
+          connect_and_identify(op);
           draw_button(&b2, 1);
           napms(100);
           draw_button(&b2, 0);
@@ -188,6 +196,8 @@ int main() {
         }
 
         else if (click_inside(&b3, mx, my)) {
+          int op=OP_DOWNLOAD;
+          connect_and_identify(op);
 	  draw_button(&b3, 1);
           napms(100);
           draw_button(&b3, 0);
@@ -211,6 +221,8 @@ int main() {
         }
 
         else if (click_inside(&b4, mx, my)) {
+          int op=OP_DELETE;
+          connect_and_identify(op);
 	  draw_button(&b4, 1);
           napms(100);
           draw_button(&b4, 0);
