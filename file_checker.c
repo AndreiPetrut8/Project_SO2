@@ -18,7 +18,11 @@ int main(int argc, char **argv) {
         printf("Eroare: Lipseste descriptorul de socket.\n");
         exit(1);
     }
+    
     socket_fd = atoi(argv[1]);
+    
+    int op = 2;
+    write(socket_fd, &op, sizeof(int));
 
     initscr();
     noecho();
@@ -26,47 +30,43 @@ int main(int argc, char **argv) {
     keypad(stdscr, TRUE);
    
     int count = 0;
-
     clear();
-    mvprintw(0, 0, "Your files on the server:");
+    mvprintw(0, 0, "Fisierele tale de pe server:");
+    mvprintw(1, 0, "(Apasati 'q' pentru a iesi)");
+    refresh();
 
     int idx = 0;
-
     while (count < MAX_FILES) {
-      char c;
-      int n = read(socket_fd, &c, 1);
+        char c;
+        int n = read(socket_fd, &c, 1);
 
-      if (n <= 0)
-	break;
+        if (n <= 0) break;
 
-      if (c == '\n') {
-	current_path[idx] = '\0';
-	idx = 0;
+        if (c == '\n') {
+            current_path[idx] = '\0';
+            idx = 0;
 
-	if (strcmp(current_path, "END") == 0) {
-	  break;
-	}
+            if (strcmp(current_path, "END") == 0) {
+                break;
+            }
 
-	mvprintw(count + 2, 2, "%s", current_path);
-	count++;
+            mvprintw(count + 3, 2, "%s", current_path);
+            count++;
+            refresh();
 
-      } else {
-	current_path[idx++] = c;
-      }
+        } else {
+            if (idx < (int)sizeof(current_path) - 1) {
+                current_path[idx++] = c;
+            }
+        }
     }
 
-    refresh();
-    close(socket_fd);
-    
     while(1){
-      int ch = getch();
-
-      if (ch == 'q') {
-	break;
-      }
+        int ch = getch();
+        if (ch == 'q' || ch == 'Q') {
+            break;
+        }
     }
-
-   
 
     endwin();
     return 0;

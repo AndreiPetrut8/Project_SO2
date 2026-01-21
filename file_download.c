@@ -50,24 +50,36 @@ int main(int argc, char **argv) {
     }
 
     global_sockfd = atoi(argv[1]);
+    int op = 3;
+    write(global_sockfd,&op,sizeof(int));
 
     initscr();
     noecho();
     curs_set(FALSE);
     keypad(stdscr, TRUE);
 
+    clear();
+    mvprintw(0, 0, "Se descarca lista de fisiere de pe server...");
+    refresh(); 
+
     char temp[1024];
     int idx = 0;
     while (file_count < MAX_FILES) {
         char c;
         if (read(global_sockfd, &c, 1) <= 0) break;
+        
         if (c == '\n') {
             temp[idx] = '\0';
+            
             if (strcmp(temp, "END") == 0) break;
+            
             file_list[file_count++] = strdup(temp);
             idx = 0;
+
+            mvprintw(file_count + 1, 2, "Gasit: %s", temp);
+            refresh(); 
         } else {
-            temp[idx++] = c;
+            if (idx < 1023) temp[idx++] = c;
         }
     }
 
@@ -84,7 +96,10 @@ int main(int argc, char **argv) {
         int ch = getch();
         if (ch == KEY_UP && selected > 0) selected--;
         else if (ch == KEY_DOWN && selected < file_count - 1) selected++;
-        else if (ch == 'q') break;
+        else if (ch == 'q'){
+	  write(global_sockfd, "\n", 1);
+	  break;
+	}
         else if (ch == 10) {
             download_selected_file(file_list[selected]);
             break;

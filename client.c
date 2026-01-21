@@ -9,10 +9,6 @@
 
 #define SERVER_PORT 4555
 #define SERVER_IP "127.0.0.1"
-#define OP_UPLOAD 1
-#define OP_CHECK 2
-#define OP_DOWNLOAD 3
-#define OP_DELETE 4
 
 typedef struct {
   WINDOW *win;
@@ -36,7 +32,7 @@ int click_inside(Button *btn, int mx, int my) {
           my >= btn->y && my < btn->y + btn->h);
 }
 
-void connect_and_identify(int op) {
+void connect_and_identify() {
     struct sockaddr_in server_addr;
     global_sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (global_sockfd < 0) {
@@ -59,7 +55,6 @@ void connect_and_identify(int op) {
     int name_len = strlen(username);
     write(global_sockfd, &name_len, sizeof(int));
     write(global_sockfd, username, name_len);
-    write(global_sockfd,&op,sizeof(int));
 }
 
 int main() {
@@ -115,19 +110,20 @@ int main() {
   clear();
   refresh();
 
-  //connect_and_identify();
+  connect_and_identify();
 
   int bh = 3, bw = 15;
   int y = h - bh - 1;
 
-  int col = w / 4;
+  int col = w / 5;
 
-  Button b1, b2, b3, b4;
+  Button b1, b2, b3, b4, b5;
 
-  b1 = (Button){ newwin(bh, bw, y, col/2 - bw/2),     col/2 - bw/2,     y, bw, bh, "Upload" };
-  b2 = (Button){ newwin(bh, bw, y, col + col/2 - bw/2), col + col/2 - bw/2, y, bw, bh, "Check" };
+  b1 = (Button){ newwin(bh, bw, y, 0*col + col/2 - bw/2), 0*col + col/2 - bw/2, y, bw, bh, "Upload" };
+  b2 = (Button){ newwin(bh, bw, y, 1*col + col/2 - bw/2), 1*col + col/2 - bw/2, y, bw, bh, "Check" };
   b3 = (Button){ newwin(bh, bw, y, 2*col + col/2 - bw/2), 2*col + col/2 - bw/2, y, bw, bh, "Download" };
   b4 = (Button){ newwin(bh, bw, y, 3*col + col/2 - bw/2), 3*col + col/2 - bw/2, y, bw, bh, "Delete" };
+  b5 = (Button){ newwin(bh, bw, y, 4*col + col/2 - bw/2), 4*col + col/2 - bw/2, y, bw, bh, "Create Folder" };
 
   refresh();
 
@@ -135,6 +131,7 @@ int main() {
   draw_button(&b2, 0);
   draw_button(&b3, 0);
   draw_button(&b4, 0);
+  draw_button(&b5, 0);
 
   MEVENT mevent;
 
@@ -145,8 +142,6 @@ int main() {
       int my = mevent.y;
 
       if (mevent.bstate & BUTTON1_CLICKED) {
-        int op=OP_UPLOAD;
-        connect_and_identify(op);
         if (click_inside(&b1, mx, my)) {
           draw_button(&b1, 1);
           napms(100);
@@ -171,8 +166,6 @@ int main() {
         }
 
         else if (click_inside(&b2, mx, my)) {
-          int op=OP_CHECK;
-          connect_and_identify(op);
           draw_button(&b2, 1);
           napms(100);
           draw_button(&b2, 0);
@@ -196,8 +189,6 @@ int main() {
         }
 
         else if (click_inside(&b3, mx, my)) {
-          int op=OP_DOWNLOAD;
-          connect_and_identify(op);
 	  draw_button(&b3, 1);
           napms(100);
           draw_button(&b3, 0);
@@ -219,10 +210,7 @@ int main() {
             mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
           }
         }
-
         else if (click_inside(&b4, mx, my)) {
-          int op=OP_DELETE;
-          connect_and_identify(op);
 	  draw_button(&b4, 1);
           napms(100);
           draw_button(&b4, 0);
@@ -244,11 +232,35 @@ int main() {
             mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
           }
         }
+	else if (click_inside(&b5, mx, my)) {
+	  draw_button(&b5, 1);
+          napms(100);
+          draw_button(&b5, 0);
+
+          pid_t copil = fork();
+          if (copil == 0) {
+            char sock_str[10];
+	    sprintf(sock_str, "%d", global_sockfd);              
+	    execl("./bin5", "./bin5", sock_str, NULL);
+            perror("execl failed");
+            exit(1);
+          } else {
+            wait(NULL);
+            endwin();
+            initscr();
+            noecho();
+            curs_set(FALSE);
+            keypad(stdscr, TRUE);
+            mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
+          }
+        }
+	
 
         draw_button(&b1, 0);
         draw_button(&b2, 0);
         draw_button(&b3, 0);
         draw_button(&b4, 0);
+	draw_button(&b5, 0);
         refresh();
       }
     }
@@ -258,6 +270,7 @@ int main() {
   delwin(b2.win);
   delwin(b3.win);
   delwin(b4.win);
+  delwin(b5.win);
   endwin();
   return 0;
 }
