@@ -205,25 +205,6 @@ void send_and_delete_file(int client_fd, const char *user_dir) {
   char file_path[1024];
   snprintf(file_path, sizeof(file_path), "%s/%s", user_dir, file_name);
 
-  int fd = open(file_path, O_RDONLY);
-  if (fd < 0) {
-    perror("open file for send");
-    return;
-  }
-
-  struct stat st;
-  fstat(fd, &st);
-  int file_size = st.st_size;
-
-  write(client_fd, &file_size, sizeof(int));
-
-  char buffer[1024];
-  int bytes;
-  while ((bytes = read(fd, buffer, 1024)) > 0) {
-    write(client_fd, buffer, bytes);
-  }
-  close(fd);
-
   if (unlink(file_path) == 0) {
     printf("File deleted: %s\n", file_name);
   } 
