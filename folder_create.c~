@@ -1,0 +1,118 @@
+#include <ncurses.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#define MAX_ITEMS 1024
+
+#define CMD_GET_DIRS 5
+#define CMD_MAKE_DIR 6
+
+int global_sockfd;
+char *remote_dirs[MAX_ITEMS];
+int dir_count = 0;
+int selected = 0;
+
+void fetch_remote_dirs() {
+    int cmd = CMD_GET_DIRS;
+    send(global_sockfd, &cmd, sizeof(int), 0);
+
+    for (int i = 0; i < dir_count; i++) free(remote_dirs[i]);
+    
+    if (recv(global_sockfd, &dir_count, sizeof(int), 0) <= 0) return;
+
+    for (int i = 0; i < dir_count; i++) {
+        int len;
+        recv(global_sockfd, &len, sizeof(int), 0);
+        remote_dirs[i] = malloc(len + 1);
+        recv(global_sockfd, remote_dirs[i], len, 0);
+        remote_dirs[i][len] = '\0';
+    }
+}
+
+void get_folder_name(char *input) {
+    echo();
+    curs_set(TRUE);
+    mvprintw(LINES - 2, 2, "Nume folder nou: ");
+    clrtoeol();
+    getnstr(input, 255);
+    noecho();
+    curs_set(FALSE);
+}
+
+void send_mkdir_request(const char *parent, const char *name) {
+    int cmd = CMD_MAKE_DIR;
+    send(global_sockfd, &cmd, sizeof(int), 0);
+
+    int p_len = strlen(parent);
+    send(global_sockfd, &p_len, sizeof(int), 0);
+    send(global_sockfd, parent, p_len, 0);
+
+    int n_len = strlen(name);
+    send(global_sockfd, &n_len, sizeof(int), 0);
+    send(global_sockfd, name, n_len, 0);
+}
+
+int main(int argc, char **argv) {
+    if (argc < 2) {
+        printf("Eroare: Lipseste socket-ul.\n");
+        return 1;
+    }
+    global_sockfd = atoi(argv[1]);
+
+    initscr();
+    noecho();
+    keypad(stdscr, TRUE);
+    curs_set(FALSE);
+
+    fetch_remote_dirs();
+
+    while (1) {
+        clear();
+        mvprintw(0, 2, "--- SERVER: Creare Director Nou ---");
+        mvprintw(1, 2, "Selecteaza locatia unde vrei sa creezi folderul:");
+        
+        if (dir_count == 0) {
+            mvprintw(3, 2, "(Niciun folder primit de pe server...)");
+        }
+
+        for (int i = 0; i < dir_count; i++) {
+            if (i == selected) attron(A_REVERSE);
+            mvprintw(i + 3, 4, "[DIR] %s", remote_dirs[i]);
+            if (i == selected) attroff(A_REVERSE);
+        }
+
+        mvprintw(LINES - 1, 2, "ENTER: Selecteaza | R: Refresh | Q: Abandon");
+        refresh();
+
+        int ch = getch();
+        if (ch == KEY_UP && selected > 0) selected--;
+        else if (ch == KEY_DOWN && selected < dir_count - 1) selected++;
+        else if (ch == 'r' || ch == 'R') {
+            fetch_remote_dirs();
+            selected = 0;
+        }
+        else if (ch == 10) {
+            if (dir_count > 0) {
+                char new_name[256];
+                get_folder_name(new_name);
+                
+                if (strlen(new_name) > 0) {
+                    send_mkdir_request(remote_dirs[selected], new_name);
+                    mvprintw(LINES - 2, 2, "Folder creat cu succes!");
+                    refresh();
+                    sleep(1);
+                    break;
+                }
+            }
+        }
+        else if (ch == 'q' || ch == 'Q') {
+            break;
+        }
+    }
+
+    for (int i = 0; i < dir_count; i++) free(remote_dirs[i]);
+    endwin();
+    return 0;
+}

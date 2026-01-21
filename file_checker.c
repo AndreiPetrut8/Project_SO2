@@ -8,92 +8,62 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define MAX_ITEMS 2048
-#define PORT 8081
+#define MAX_FILES 1024
 
+int socket_fd;
 char current_path[1024];
-char *items[MAX_ITEMS];
-int item_count = 0;
-int selected = 0;
 
-void load_directory(const char *path) {
-    DIR *dir;
-    struct dirent *entry;
-
-    for (int i = 0; i < item_count; i++)
-        free(items[i]);
-    item_count = 0;
-    selected = 0;
-
-    dir = opendir(path);
-    if (!dir) return;
-
-    while ((entry = readdir(dir)) != NULL) {
-        items[item_count++] = strdup(entry->d_name);
-        if (item_count >= MAX_ITEMS) break;
+int main(int argc, char **argv) {
+    if (argc < 2) {
+        printf("Eroare: Lipseste descriptorul de socket.\n");
+        exit(1);
     }
-
-    closedir(dir);
-}
-
-int main() {
-    strcpy(current_path, "/");
+    
+    socket_fd = atoi(argv[1]);
+    
+    int op = 2;
+    write(socket_fd, &op, sizeof(int));
 
     initscr();
     noecho();
     curs_set(FALSE);
     keypad(stdscr, TRUE);
-    //comm
-    int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (socket_fd < 0) {
-      perror("socket creation failed");
-      exit(-1);
-    }
-
-    struct sockaddr_in address = {0};
-    address.sin_family = AF_INET;
-    address.sin_port = htons(PORT);
-    inet_pton(AF_INET, "127.0.0.1", &address.sin_addr);
-
-    if (connect(socket_fd, (struct sockaddr*)&address, sizeof(address)) < 0) {
-      perror("Connection failed");
-      exit(-1);
-    }
-
    
-    //end comm
-   
+    int count = 0;
+    clear();
+    mvprintw(0, 0, "Fisierele tale de pe server:");
+    mvprintw(1, 0, "(Apasati 'q' pentru a iesi)");
+    refresh();
 
-    load_directory(current_path);
+    int idx = 0;
+    while (count < MAX_FILES) {
+        char c;
+        int n = read(socket_fd, &c, 1);
 
-    while (1) {
-        clear();
-        mvprintw(0, 0, "Exploring: %s", current_path);
-	while((int n = read(socket_fd,current_path, sizeof(current_path)-1)) > 0)
-      {
-	current_path[n] = '\0';
-      }
+        if (n <= 0) break;
 
-    close(socket_fd);
+        if (c == '\n') {
+            current_path[idx] = '\0';
+            idx = 0;
 
-        for (int i = 0; i < item_count; i++) {
-            if (i == selected)
-                attron(A_REVERSE);
+            if (strcmp(current_path, "END") == 0) {
+                break;
+            }
 
-            if (is_directory(current_path, items[i]))
-                mvprintw(i + 2, 2, "[%s]", items[i]);
-            else
-                mvprintw(i + 2, 2, "%s", items[i]);
+            mvprintw(count + 3, 2, "%s", current_path);
+            count++;
+            refresh();
 
-            if (i == selected)
-                attroff(A_REVERSE);
+        } else {
+            if (idx < (int)sizeof(current_path) - 1) {
+                current_path[idx++] = c;
+            }
         }
+    }
 
-        refresh();
-
+    while(1){
         int ch = getch();
-
-        if (ch == 'q') {
+        if (ch == 'q' || ch == 'Q') {
             break;
         }
     }

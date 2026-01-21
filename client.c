@@ -3,12 +3,21 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <stdlib.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
+#define SERVER_PORT 4555
+#define SERVER_IP "127.0.0.1"
 
 typedef struct {
   WINDOW *win;
   int x, y, w, h;
   const char *label;
 } Button;
+
+int global_sockfd = -1;
+char username[50];
 
 void draw_button(Button *btn, int highlighted) {
   if (highlighted) wattron(btn->win, A_REVERSE);
@@ -20,7 +29,32 @@ void draw_button(Button *btn, int highlighted) {
 
 int click_inside(Button *btn, int mx, int my) {
   return (mx >= btn->x && mx < btn->x + btn->w &&
-	  my >= btn->y && my < btn->y + btn->h);
+          my >= btn->y && my < btn->y + btn->h);
+}
+
+void connect_and_identify() {
+    struct sockaddr_in server_addr;
+    global_sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (global_sockfd < 0) {
+        endwin();
+        perror("Eroare creare socket");
+        exit(1);
+    }
+
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(SERVER_PORT);
+    server_addr.sin_addr.s_addr = inet_addr(SERVER_IP);
+
+    if (connect(global_sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        endwin();
+        printf("Serverul nu raspunde la %s:%d\n", SERVER_IP, SERVER_PORT);
+        exit(1);
+    }
+
+    int name_len = strlen(username);
+    write(global_sockfd, &name_len, sizeof(int));
+    write(global_sockfd, username, name_len);
 }
 
 int main() {
@@ -33,100 +67,201 @@ int main() {
   int h, w;
   getmaxyx(stdscr, h, w);
 
+  int len = 0;
+  int ch;
+
+  while (1) {
+    clear();
+    mvprintw(3, w/2-sizeof("Enter your name:"), "Login");
+    mvprintw(5, w/2-sizeof("Enter your name:"), "Enter your name:");
+    mvprintw(6, w/2-sizeof("Enter your name:"), "> %s", username);
+    mvprintw(8, w/2-sizeof("Enter your name:"), "Press ENTER to continue");
+
+    move(6, 7 + len);
+    refresh();
+
+    ch = getch();
+
+    if(ch == 27){
+      endwin();
+      exit(0);
+    }
+
+    if (ch == '\n') {
+      if (len > 0) {
+	break;
+      } else {
+	mvprintw(10, w/2-sizeof("Enter your name:"), "Name cannot be empty!");
+	refresh();
+	napms(1000);
+      }
+    }
+    else if (ch == KEY_BACKSPACE || ch == 127) {
+      if (len > 0) {
+	username[--len] = '\0';
+      }
+    }
+    else if (ch >= 32 && ch <= 126 && len < (int)sizeof(username) - 1) {
+      username[len++] = ch;
+      username[len] = '\0';
+    }
+  }
+
+  clear();
+  refresh();
+
+  connect_and_identify();
+
   int bh = 3, bw = 15;
   int y = h - bh - 1;
 
-  Button b1, b2, b3;
+  int col = w / 5;
 
-  b1 = (Button){ newwin(bh, bw, y, w/6 - bw/2), w/6 - bw/2, y, bw, bh, "Upload files" };
-  b2 = (Button){ newwin(bh, bw, y, w/2 - bw/2), w/2 - bw/2, y, bw, bh, "Check files" };
-  b3 = (Button){ newwin(bh, bw, y, 5*w/6 - bw/2), 5*w/6 - bw/2, y, bw, bh, "Buton 3" };
+  Button b1, b2, b3, b4, b5;
+
+  b1 = (Button){ newwin(bh, bw, y, 0*col + col/2 - bw/2), 0*col + col/2 - bw/2, y, bw, bh, "Upload" };
+  b2 = (Button){ newwin(bh, bw, y, 1*col + col/2 - bw/2), 1*col + col/2 - bw/2, y, bw, bh, "Check" };
+  b3 = (Button){ newwin(bh, bw, y, 2*col + col/2 - bw/2), 2*col + col/2 - bw/2, y, bw, bh, "Download" };
+  b4 = (Button){ newwin(bh, bw, y, 3*col + col/2 - bw/2), 3*col + col/2 - bw/2, y, bw, bh, "Delete" };
+  b5 = (Button){ newwin(bh, bw, y, 4*col + col/2 - bw/2), 4*col + col/2 - bw/2, y, bw, bh, "Create Folder" };
+
   refresh();
 
   draw_button(&b1, 0);
   draw_button(&b2, 0);
   draw_button(&b3, 0);
-  refresh();
+  draw_button(&b4, 0);
+  draw_button(&b5, 0);
 
   MEVENT mevent;
-  int ch;
 
   while ((ch = getch()) != 'q') {
+    if (ch == KEY_MOUSE && getmouse(&mevent) == OK) {
 
-    if (ch == KEY_MOUSE) {
-      if (getmouse(&mevent) == OK) {
+      int mx = mevent.x;
+      int my = mevent.y;
 
-	int mx = mevent.x;
-	int my = mevent.y;
+      if (mevent.bstate & BUTTON1_CLICKED) {
+        if (click_inside(&b1, mx, my)) {
+          draw_button(&b1, 1);
+          napms(100);
+          draw_button(&b1, 0);
 
- 	if (mevent.bstate & BUTTON1_CLICKED) {
+          pid_t copil = fork();
+          if (copil == 0) {
+            char sock_str[10];
+	    sprintf(sock_str, "%d", global_sockfd);              
+	    execl("./bin1", "./bin1", sock_str, NULL);
+            perror("execl failed");
+            exit(1);
+          } else {
+            wait(NULL);
+            endwin();
+            initscr();
+            noecho();
+            curs_set(FALSE);
+            keypad(stdscr, TRUE);
+            mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
+          }
+        }
 
-	  if (click_inside(&b1, mx, my)) {
-	    draw_button(&b1, 1);
-	    refresh();
-	    napms(100);
-	    draw_button(&b1, 0);
-	    pid_t copil = fork();
-	    if (copil == 0) {   
-	      execl("./bin1", "./bin1", NULL);
+        else if (click_inside(&b2, mx, my)) {
+          draw_button(&b2, 1);
+          napms(100);
+          draw_button(&b2, 0);
 
-	      perror("execlp a esuat");
-	      exit(1);
-	    } else {
-	      wait(NULL);
+          pid_t copil = fork();
+          if (copil == 0) {
+            char sock_str[10];
+	    sprintf(sock_str, "%d", global_sockfd);              
+	    execl("./bin2", "./bin2", sock_str, NULL);
+            perror("execl failed");
+            exit(1);
+          } else {
+            wait(NULL);
+            endwin();
+            initscr();
+            noecho();
+            curs_set(FALSE);
+            keypad(stdscr, TRUE);
+            mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
+          }
+        }
 
-	      endwin();
-	      refresh();
-	      initscr();
-	      noecho();
-	      curs_set(FALSE);
-	      keypad(stdscr, TRUE);
-	      mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
+        else if (click_inside(&b3, mx, my)) {
+	  draw_button(&b3, 1);
+          napms(100);
+          draw_button(&b3, 0);
 
-	      draw_button(&b1, 0);
-	      draw_button(&b2, 0);
-	      draw_button(&b3, 0);
-	      refresh();
-	    }
-	  } 
-	  else if (click_inside(&b2, mx, my)) {
-	    draw_button(&b2, 1);
-	    refresh();
-	    napms(100);
-	    draw_button(&b2, 0);
-	     pid_t copil = fork();
-	    if (copil == 0) {   
-	      execl("./bin2", "./bin2", NULL);
+          pid_t copil = fork();
+          if (copil == 0) {
+            char sock_str[10];
+	    sprintf(sock_str, "%d", global_sockfd);              
+	    execl("./bin3", "./bin3", sock_str, NULL);
+            perror("execl failed");
+            exit(1);
+          } else {
+            wait(NULL);
+            endwin();
+            initscr();
+            noecho();
+            curs_set(FALSE);
+            keypad(stdscr, TRUE);
+            mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
+          }
+        }
+        else if (click_inside(&b4, mx, my)) {
+	  draw_button(&b4, 1);
+          napms(100);
+          draw_button(&b4, 0);
 
-	      perror("execlp a esuat");
-	      exit(1);
-	    } else {
-	      wait(NULL);
+          pid_t copil = fork();
+          if (copil == 0) {
+            char sock_str[10];
+	    sprintf(sock_str, "%d", global_sockfd);              
+	    execl("./bin4", "./bin4", sock_str, NULL);
+            perror("execl failed");
+            exit(1);
+          } else {
+            wait(NULL);
+            endwin();
+            initscr();
+            noecho();
+            curs_set(FALSE);
+            keypad(stdscr, TRUE);
+            mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
+          }
+        }
+	else if (click_inside(&b5, mx, my)) {
+	  draw_button(&b5, 1);
+          napms(100);
+          draw_button(&b5, 0);
 
-	      endwin();
-	      refresh();
-	      initscr();
-	      noecho();
-	      curs_set(FALSE);
-	      keypad(stdscr, TRUE);
-	      mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
+          pid_t copil = fork();
+          if (copil == 0) {
+            char sock_str[10];
+	    sprintf(sock_str, "%d", global_sockfd);              
+	    execl("./bin5", "./bin5", sock_str, NULL);
+            perror("execl failed");
+            exit(1);
+          } else {
+            wait(NULL);
+            endwin();
+            initscr();
+            noecho();
+            curs_set(FALSE);
+            keypad(stdscr, TRUE);
+            mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
+          }
+        }
+	
 
-	      draw_button(&b1, 0);
-	      draw_button(&b2, 0);
-	      draw_button(&b3, 0);
-	      refresh();
-	    }
-	  } 
-	  else if (click_inside(&b3, mx, my)) {
-	    draw_button(&b3, 1);
-	    refresh();
-	    mvprintw(0, 0, "Ai dat click pe Buton 3   ");
-	    napms(100);
-	    draw_button(&b3, 0);
-	  }
-
-	  refresh();
-	}
+        draw_button(&b1, 0);
+        draw_button(&b2, 0);
+        draw_button(&b3, 0);
+        draw_button(&b4, 0);
+	draw_button(&b5, 0);
+        refresh();
       }
     }
   }
@@ -134,6 +269,8 @@ int main() {
   delwin(b1.win);
   delwin(b2.win);
   delwin(b3.win);
+  delwin(b4.win);
+  delwin(b5.win);
   endwin();
   return 0;
 }
