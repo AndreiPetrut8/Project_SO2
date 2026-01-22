@@ -9,11 +9,18 @@
 #include <pthread.h>
 #include <dirent.h>
 
+///////////////////////////////////
+// ---------- DEFINES ---------- //
+///////////////////////////////////
 
 #define PORT 4555
 #define MAX_NAME 30
 #define STORAGE "storage"
 #define CHUNK 8192
+
+//////////////////////////////////
+// ---------- STRUCT ---------- //
+//////////////////////////////////
 
 typedef struct {
   int client_fd;
@@ -24,6 +31,11 @@ struct packet {
   int size;
   char buffer[CHUNK];
 };
+
+
+///////////////////////////////////////////////////////
+// ---------- LIST FILES RECURSIVE WORKER ---------- //
+///////////////////////////////////////////////////////
 
 void list_files_recursive_worker(int client_fd, const char *base_path, const char *rel_path) {
     DIR *dir = opendir(base_path);
@@ -54,11 +66,10 @@ void list_files_recursive_worker(int client_fd, const char *base_path, const cha
     closedir(dir);
 }
 
-void send_file_list(int client_fd, const char *user_dir) {
-    list_files_recursive_worker(client_fd, user_dir, "");
-    
-    write(client_fd, "END\n", 4);
-}
+
+///////////////////////////////////////////////
+// ---------- LIST DIRS RECURSIVE ---------- //
+///////////////////////////////////////////////
 
 void list_dirs_recursive(const char *base_path, const char *rel_path, char **dir_names, int *count) {
   DIR *dir = opendir(base_path);
@@ -87,23 +98,25 @@ void list_dirs_recursive(const char *base_path, const char *rel_path, char **dir
   closedir(dir);
 }
 
-void handle_send_dir_list(int client_fd, const char *user_dir) {
-  char *dir_names[1024];
-  int count = 0;
 
-  dir_names[count++] = strdup(".");
+///////////////////////////////////////////
+// ---------- SEND FILES LIST ---------- //
+///////////////////////////////////////////
+//
+// OP 2
 
-  list_dirs_recursive(user_dir, ".", dir_names, &count);
+void send_file_list(int client_fd, const char *user_dir) {
+  list_files_recursive_worker(client_fd, user_dir, "");
 
-  if (write(client_fd, &count, sizeof(int)) <= 0) return;
-
-  for (int i = 0; i < count; i++) {
-    int len = strlen(dir_names[i]);
-    write(client_fd, &len, sizeof(int));
-    write(client_fd, dir_names[i], len);
-    free(dir_names[i]);
-  }
+  write(client_fd, "END\n", 4);
 }
+
+
+////////////////////////////////////////
+// ---------- HANDLE MKDIR ---------- //
+////////////////////////////////////////
+//
+// OP 6
 
 void handle_mkdir(int client_fd, const char *user_dir) {
   int p_len, n_len;
@@ -128,6 +141,125 @@ void handle_mkdir(int client_fd, const char *user_dir) {
     perror("mkdir error");
   }
 }
+
+
+///////////////////////////////////////////////////
+// ---------- HANDLE SEND DIR TO LIST ---------- //
+///////////////////////////////////////////////////
+//
+// OP 5
+
+void handle_send_dir_list(int client_fd, const char *user_dir) {
+  char *dir_names[1024];
+  int count = 0;
+
+  dir_names[count++] = strdup(".");
+
+  list_dirs_recursive(user_dir, ".", dir_names, &count);
+
+  if (write(client_fd, &count, sizeof(int)) <= 0) return;
+
+  for (int i = 0; i < count; i++) {
+    int len = strlen(dir_names[i]);
+    write(client_fd, &len, sizeof(int));
+    write(client_fd, dir_names[i], len);
+    free(dir_names[i]);
+  }
+}
+
+
+////////////////////////////////////////////////
+// ---------- SEND AND DELETE FILE ---------- //
+////////////////////////////////////////////////
+//
+// OP 4
+
+void send_and_delete_file(int client_fd, const char *user_dir) {
+  send_file_list(client_fd,user_dir);
+  char file_name[256];
+  int k = 0;
+  char c;
+
+  while (read(client_fd, &c, 1) > 0) {
+    if (c == '\n') break;
+    file_name[k++] = c;
+  }
+  file_name[k] = '\0';
+
+  if(k == 0){
+    return;
+  }
+
+  char file_path[1024];
+  snprintf(file_path, sizeof(file_path), "%s/%s", user_dir, file_name);
+
+  if (unlink(file_path) == 0) {
+    printf("File deleted: %s\n", file_name);
+  }
+}
+
+
+////////////////////////////////////////////
+// ---------- SEND TO DOWNLOAD ---------- //
+////////////////////////////////////////////
+//
+// OP 3
+
+void send_to_download(int client_fd, const char *user_dir)
+{
+
+  send_file_list(client_fd, user_dir);
+
+
+  char file_name[256];
+  char c;
+  int  k=0;
+
+  while (read(client_fd, &c, 1) > 0) {
+    if (c == '\n')break;
+    file_name[k++] = c;
+  }
+  file_name[k] = '\0';
+
+  if (k == 0) return;
+
+
+  char file_path[1024];
+  snprintf(file_path, sizeof(file_path), "%s/%s", user_dir, file_name);
+
+
+  int fd = open(file_path, O_RDONLY);
+  if (fd < 0) {
+    perror("open download file");
+    return;
+  }
+
+
+  struct stat st;
+  fstat(fd, &st);
+  int file_size = st.st_size;
+
+  write(client_fd, &file_size, sizeof(int));
+
+
+  char buffer[CHUNK];
+  int bytes;
+
+  while ((bytes = read(fd, buffer, CHUNK)) > 0) {
+    write(client_fd, buffer, bytes);
+  }
+
+  close(fd);
+
+  printf("Download sent: %s (%d bytes)\n", file_name, file_size);
+}
+
+
+////////////////////////////////////////
+// ---------- RECEIVE FILE ---------- //
+////////////////////////////////////////
+//
+// OP 1
 
 void receive_file(int sockfd, const char *user_dir)
 {
@@ -185,82 +317,10 @@ void receive_file(int sockfd, const char *user_dir)
 }
 
 
-void send_and_delete_file(int client_fd, const char *user_dir) {
-  send_file_list(client_fd,user_dir);
-  char file_name[256];
-  int k = 0;
-  char c;
 
-  // citire nume fișier până la \n
-  while (read(client_fd, &c, 1) > 0) {
-    if (c == '\n') break;
-    file_name[k++] = c;
-  }
-  file_name[k] = '\0';
-
-  if(k == 0){
-    return;
-  }
-
-  char file_path[1024];
-  snprintf(file_path, sizeof(file_path), "%s/%s", user_dir, file_name);
-
-  if (unlink(file_path) == 0) {
-    printf("File deleted: %s\n", file_name);
-  } 
-}
-
-void send_to_download(int client_fd, const char *user_dir)
-{
-    
-  send_file_list(client_fd, user_dir);
-
-    
-  char file_name[256];
-  char c;
-  int  k=0;
-
-  while (read(client_fd, &c, 1) > 0) {
-    if (c == '\n')break;
-    file_name[k++] = c;
-  }
-  file_name[k] = '\0';
-
-  if (k == 0) return;
-
-    
-  char file_path[1024];
-  snprintf(file_path, sizeof(file_path), "%s/%s", user_dir, file_name);
-
-    
-  int fd = open(file_path, O_RDONLY);
-  if (fd < 0) {
-    perror("open download file");
-    return;
-  }
-
-    
-  struct stat st;
-  fstat(fd, &st);
-  int file_size = st.st_size;
-
-  write(client_fd, &file_size, sizeof(int));
-
-    
-  char buffer[CHUNK];
-  int bytes;
-
-  while ((bytes = read(fd, buffer, CHUNK)) > 0) {
-    write(client_fd, buffer, bytes);
-  }
-
-  close(fd);
-
-  printf("Download sent: %s (%d bytes)\n", file_name, file_size);
-}
-
-
-
+/////////////////////////////////////////
+// ---------- HANDLE CLIENT ---------- //
+/////////////////////////////////////////
 
 void* handle_client(void *arg)
 {
@@ -271,10 +331,21 @@ void* handle_client(void *arg)
   char username[MAX_NAME] = {0};
   int name_len;
 
-    
-  if (read(client_fd, &name_len, sizeof(int)) <= 0) { close(client_fd); return NULL; }
-  if (name_len <= 0 || name_len >= MAX_NAME) { close(client_fd); return NULL; }
-  if (read(client_fd, username, name_len) <= 0) { close(client_fd); return NULL; }
+  if (read(client_fd, &name_len, sizeof(int)) <= 0) {
+    close(client_fd);
+    return NULL;
+  }
+
+  if (name_len <= 0 || name_len >= MAX_NAME) {
+    close(client_fd);
+    return NULL;
+  }
+
+  if (read(client_fd, username, name_len) <= 0) {
+    close(client_fd);
+    return NULL;
+  }
+
   username[name_len] = '\0';
 
   int op;
@@ -283,7 +354,6 @@ void* handle_client(void *arg)
   struct stat st;
   if (stat(user_dir, &st) == -1) mkdir(user_dir, 0755);
 
-  //Se trimite EOF din shutdown din client
   while (read(client_fd, &op, sizeof(int)) > 0) {
     printf("Comanda primita: %d pentru user: %s\n", op, username);
 
@@ -300,6 +370,9 @@ void* handle_client(void *arg)
   return NULL;
 }
 
+////////////////////////////////
+// ---------- MAIN ---------- //
+////////////////////////////////
 
 int main(void)
 {
